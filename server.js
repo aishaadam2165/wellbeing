@@ -1,0 +1,13 @@
+require('dotenv').config();
+const express=require('express'),session=require('express-session'),MongoStore=require('connect-mongo'),mongoose=require('mongoose'),path=require('path'),rateLimit=require('express-rate-limit');
+const csrf=require('./middleware/csrf');
+const app=express();
+app.set('view engine','ejs');app.set('views',path.join(__dirname,'views'));
+app.use(express.urlencoded({extended:false,limit:'20kb'}));app.use(express.json({limit:'10kb'}));app.use(express.static(path.join(__dirname,'public')));
+app.use(session({secret:process.env.SESSION_SECRET||'development-only-change-this-secret',resave:false,saveUninitialized:false,store:MongoStore.create({mongoUrl:process.env.MONGODB_URI||'mongodb://127.0.0.1:27017/wellspring_recovery'}),cookie:{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:1000*60*60*24*7}}));
+app.use(csrf.token);app.use((req,res,next)=>{res.locals.currentUser=req.session.userId?{id:req.session.userId,name:req.session.name}:null;res.locals.today=new Date().toLocaleDateString('en',{weekday:'short',day:'numeric',month:'short',year:'numeric'});next();});
+app.use('/api',rateLimit({windowMs:60*1000,limit:15,standardHeaders:true,legacyHeaders:false}));
+app.use('/',require('./routes/web'));app.use('/api',require('./routes/api'));
+app.use((err,req,res,next)=>{console.error(err);res.status(500).send('Something went wrong. Please try again.');});
+const port=process.env.PORT||3000;
+mongoose.connect(process.env.MONGODB_URI||'mongodb://127.0.0.1:27017/wellspring_recovery').then(()=>app.listen(port,()=>console.log(`WellSpring running at http://localhost:${port}`))).catch(e=>{console.error('MongoDB connection failed:',e.message);process.exit(1);});
